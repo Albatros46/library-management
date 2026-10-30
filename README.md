@@ -1,96 +1,100 @@
-# Kütüphane Yönetimi – Mikroservis
+# Bibliotheksverwaltung – Microservices
 
-Spring Boot 3.5 + MongoDB + React (Vite) ile yazılmış, personelin üye/kitap/ödünç işlemlerini yönettiği kütüphane uygulaması.
+[![CI](https://github.com/Albatros46/library-management/actions/workflows/ci.yml/badge.svg)](https://github.com/Albatros46/library-management/actions/workflows/ci.yml)
 
-## Mimari
+> 🇹🇷 Türkçe sürüm: [README.tr.md](README.tr.md)
+
+Ein Bibliothekssystem für das Personal, gebaut als Microservice-Architektur mit Spring Boot 3.5, MongoDB und React (Vite). Das Personal verwaltet Mitglieder und den Katalog, gibt Ausleihen und Rückgaben frei und behält überfällige Bücher im Blick. Mitglieder erhalten Erinnerungen und Mahnungen per E-Mail. Die Oberfläche ist auf Türkisch.
+
+## Architektur
 
 ```
-React (5173 / 3000) ──► API Gateway :8080 ──┬─► auth-service         :8081  staff_users
-   (JWT Bearer)          JWT doğrular,       ├─► member-service       :8082  members
-                         X-User-* ekler      ├─► catalog-service      :8083  books, authors, publishers
+React (5173 / 3000) ──► API-Gateway :8080 ──┬─► auth-service         :8081  staff_users
+   (JWT Bearer)          prüft JWT,          ├─► member-service       :8082  members
+                         setzt X-User-*      ├─► catalog-service      :8083  books, authors, publishers
                                              ├─► loan-service         :8084  loans
                                              └─► notification-service :8085  notification_logs
-loan-service ──REST──► member-service, catalog-service (üye kontrolü, stok düş/artır)
-notification-service ──REST──► loan-service, member-service ──SMTP──► e-posta
+loan-service ──REST──► member-service, catalog-service (Mitgliedsprüfung, Bestand reservieren/zurückbuchen)
+notification-service ──REST──► loan-service, member-service ──SMTP──► E-Mail
 ```
 
-| Servis | Sorumluluk |
+| Service | Aufgabe |
 |---|---|
-| **api-gateway** | Spring Cloud Gateway (WebMVC). `/api/**` isteklerini yönlendirir, JWT'yi doğrular, kullanıcıyı `X-User-Id/Name/Role` başlıklarıyla iletir. İstemciden gelen sahte `X-User-*` başlıklarını siler; servisler arası uç noktaları (`/books/*/checkout`, `/books/*/return`, `/loans/*/reminded`) dışarı kapatır. |
-| **auth-service** | Personel hesapları (ADMIN / STAFF), BCrypt parola, JWT üretimi. İlk açılışta yönetici hesabı oluşturur. |
-| **member-service** | Üyeler: ad, soyad, e-posta, telefon, adres, durum, hatırlatma tercihi. Arama. |
-| **catalog-service** | Kitap, yazar, yayınevi, kategori. Yazar detay = yazar bilgisi + kitap listesi. Kopya sayısı ve müsaitlik (atomik düş/artır). |
-| **loan-service** | Ödünç iş akışı ve onaylar, son tarih takibi, gecikenler listesi, üye okuma raporu. |
-| **notification-service** | Her gün 09:00'da iade tarihi yaklaşanlara e-posta, gecikenlere iade talebi e-postası; elle hatırlatma; bildirim günlüğü. |
+| **api-gateway** | Spring Cloud Gateway (WebMVC). Leitet `/api/**` weiter, prüft das JWT und gibt den Benutzer als `X-User-Id/Name/Role`-Header an die Services weiter. Vom Client gesendete `X-User-*`-Header werden verworfen; interne Endpunkte (`/books/*/checkout`, `/books/*/return`, `/loans/*/reminded`) sind von außen gesperrt (403). |
+| **auth-service** | Personalkonten (ADMIN / STAFF), BCrypt-Passwörter, Ausgabe des JWT. Legt beim ersten Start ein Admin-Konto an. |
+| **member-service** | Mitglieder: Vor- und Nachname, E-Mail, Telefon, Adresse, Status, Erinnerungs-Einstellung. Suche. |
+| **catalog-service** | Bücher, Autoren, Verlage, Kategorien. Autorenseite mit Biografie und allen Büchern. Exemplare und Verfügbarkeit (atomar per `findAndModify`). |
+| **loan-service** | Ausleih-Workflow mit Freigaben, Fälligkeitsdaten, Liste der überfälligen Ausleihen, Leseprofil pro Mitglied. |
+| **notification-service** | Täglich um 09:00: Erinnerung kurz vor dem Fälligkeitsdatum, Mahnung bei Überfälligkeit (höchstens alle 3 Tage pro Ausleihe). Manuelle Mahnung und Benachrichtigungsprotokoll. |
 
-Tüm servisler `mongodb://localhost:27017/library_management` veritabanını kullanır; her servis yalnızca kendi collection'larına yazar (yukarıdaki listede). Bir servisi ayrı veritabanına almak için o servise farklı bir `MONGO_URI` vermek yeterli. Servisler arası iletişim ilk sürümde REST; ileride Kafka/RabbitMQ olaylarına geçilebilir.
+Alle Services nutzen die Datenbank `mongodb://localhost:27017/library_management`; jeder Service schreibt nur in seine eigenen Collections (siehe oben). Soll ein Service eine eigene Datenbank bekommen, genügt eine andere `MONGO_URI`. Die Services sprechen in dieser Version per REST miteinander; ein Umstieg auf Kafka/RabbitMQ-Events ist möglich.
 
-## Ödünç iş akışı
+## Ausleih-Workflow
 
 ```
-PENDING ──onayla──► ACTIVE ──son tarih geçti──► OVERDUE
-   │                  │  ▲                         │
- reddet          iade al│  │vazgeç            iade al│
-   ▼                  ▼  │                         ▼
-REJECTED         RETURN_PENDING ──iadeyi onayla──► RETURNED
+PENDING ──freigeben──► ACTIVE ──Fälligkeit überschritten──► OVERDUE
+   │                     │  ▲                                   │
+ablehnen          Rückgabe│  │abbrechen                  Rückgabe│
+   ▼                     ▼  │                                   ▼
+REJECTED          RETURN_PENDING ──Rückgabe freigeben──────► RETURNED
 ```
 
-- Personel ödünç talebi açar (**PENDING**); bir personel **onaylayınca** kitabın bir kopyası düşülür ve süre başlar.
-- İade: "İade al" ile **RETURN_PENDING** olur, onaylanınca kopya kataloğa geri döner. Tek adımda "İade al + onayla" da yapılabilir.
-- Kurallar: üye aktif olmalı, gecikmiş kitabı olan üyeye yeni kitap verilmez, en fazla 5 açık ödünç, aynı kitaptan iki açık ödünç olmaz, 1 kez uzatma (`loan-service/application.yml`).
-- Son tarihi geçen ödünçler 15 dakikada bir **OVERDUE** olarak işaretlenir ve **Gecikenler** ekranında ayrı listelenir.
+- Das Personal legt eine Ausleihe an (**PENDING**). Erst mit der **Freigabe** wird ein Exemplar abgebucht und die Leihfrist beginnt.
+- Rückgabe: „İade al“ setzt die Ausleihe auf **RETURN_PENDING**, nach der Freigabe geht das Exemplar zurück in den Katalog. Beides geht auch in einem Schritt.
+- Regeln: Das Mitglied muss aktiv sein; wer ein überfälliges Buch hat, bekommt kein neues; höchstens 5 offene Ausleihen; kein Buch doppelt; einmal verlängern (`loan-service/application.yml`).
+- Ausleihen mit überschrittenem Fälligkeitsdatum werden alle 15 Minuten auf **OVERDUE** gesetzt und erscheinen in einer eigenen Liste („Gecikenler“).
 
-## Ekranlar
+## Oberfläche
 
-Genel bakış · Ödünç işlemleri (onay bekleyenler, ödünçteki kitaplar) · Gecikenler (hatırlatma durumu, elle hatırlatma, iade al) · Üyeler / üye detayı (iletişim, üyedeki kitaplar ve iade tarihleri, geçmiş, **kaç kitap / kaç sayfa / hangi alanlarda**) · Kitap kataloğu / kitap detayı (yazar, sayfa, yayınevi, kategori, müsaitlik, kitap kimde) · Yazarlar / yazar detayı (bilgiler + kitap listesi) · Bildirimler · Personel (yalnızca yönetici).
+Übersicht · Ausleihen (offene Freigaben, ausgeliehene Bücher) · Überfällige (Mahnstatus, manuelle Mahnung, Rückgabe) · Mitglieder / Mitgliedsdetails (Kontaktdaten, aktuelle Bücher mit Fälligkeit, Verlauf, **Anzahl Bücher, Seiten und Kategorien**) · Katalog / Buchdetails (Autor, Seitenzahl, Verlag, Kategorie, Verfügbarkeit, wer das Buch hat) · Autoren / Autorendetails (Infos + Bücherliste) · Benachrichtigungen · Personal (nur Admin).
 
-> "Hangi alanda okuduğu" raporu, ödünç alınan kitapların kategorilerinden üretilir; kitabın gerçekten okunduğunu göstermez.
+> Das Leseprofil wird aus den Kategorien der ausgeliehenen Bücher berechnet; es zeigt nicht, ob ein Buch tatsächlich gelesen wurde.
 
-## Çalıştırma
+## Starten
 
-### Docker Compose (önerilen)
+### Docker Compose (empfohlen)
 
 ```bash
 docker compose up --build
 ```
 
-- Arayüz: http://localhost:3000
+- Oberfläche: http://localhost:3000
 - Gateway: http://localhost:8080
-- Giden e-postalar (Mailpit): http://localhost:8025
-- Giriş: `admin@library.local` / `admin123` (`ADMIN_EMAIL`, `ADMIN_PASSWORD` ile değiştirin)
+- Versendete E-Mails (Mailpit): http://localhost:8025
+- Login: `admin@library.local` / `admin123` (änderbar über `ADMIN_EMAIL`, `ADMIN_PASSWORD`)
 
-Gerçek SMTP için `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true`, `MAIL_STARTTLS=true`, `MAIL_FROM` ortam değişkenlerini verin. Üretimde mutlaka `JWT_SECRET` (en az 32 bayt) ayarlayın.
+Für einen echten SMTP-Server die Umgebungsvariablen `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true`, `MAIL_STARTTLS=true` und `MAIL_FROM` setzen. In Produktion unbedingt `JWT_SECRET` (mindestens 32 Byte) setzen.
 
-### Terminalden tek komutla (IntelliJ terminali / PowerShell)
+### Ein Befehl im Terminal (IntelliJ-Terminal / PowerShell)
 
 ```powershell
 .\start-all.ps1
 ```
 
-MongoDB ve Mailpit'i Docker ile başlatır, Maven ile derler, 6 servisi ve Vite arayüzünü arka planda açar, hepsi hazır olunca adresleri yazar. Loglar `logs\` klasörüne gider.
+Startet MongoDB und Mailpit per Docker, baut mit Maven, startet die 6 Services und die Vite-Oberfläche im Hintergrund und gibt die Adressen aus, sobald alles bereit ist. Logs liegen in `logs\`.
 
-| Komut | Ne yapar |
+| Befehl | Wirkung |
 |---|---|
-| `.\start-all.ps1 -SkipBuild` | Derlemeden, mevcut jar'larla başlatır (daha hızlı) |
-| `.\start-all.ps1 -NoFrontend` | Sadece backend |
-| `.\stop-all.ps1` | Hepsini durdurur (MongoDB ve Mailpit dahil) |
-| `.\stop-all.ps1 -KeepInfra` | Servisleri durdurur, MongoDB ve Mailpit açık kalır |
+| `.\start-all.ps1 -SkipBuild` | Ohne Build, mit den vorhandenen JARs (schneller) |
+| `.\start-all.ps1 -NoFrontend` | Nur Backend |
+| `.\stop-all.ps1` | Stoppt alles (inkl. MongoDB und Mailpit) |
+| `.\stop-all.ps1 -KeepInfra` | Stoppt die Services, MongoDB und Mailpit laufen weiter |
 
-Portlardan biri doluysa (ör. `docker compose up` ile tüm yığın çalışıyorsa) betik hiçbir şey başlatmadan uyarır; önce `docker compose down` çalıştırın.
+Ist ein Port belegt (z. B. weil der komplette Stack per `docker compose up` läuft), startet das Skript nichts und meldet es; vorher `docker compose down` ausführen.
 
-### IntelliJ IDEA'dan tek tıkla
+### IntelliJ IDEA mit einem Klick
 
-Projeyi IntelliJ'de açınca `.run/` klasöründeki çalıştırma ayarları otomatik gelir. Üst çubuktaki listeden **All Services** seçip ▶ (Run) ya da 🐞 (Debug) tıklayın. Şu sırayla hepsi başlar:
+Die Run-Konfigurationen in `.run/` erscheinen beim Öffnen des Projekts automatisch. In der Liste oben **All Services** wählen und ▶ (Run) oder 🐞 (Debug) klicken:
 
-1. `infra (MongoDB + Mailpit)`: `docker compose up -d mongo mailpit` (Docker Desktop açık olmalı)
+1. `infra (MongoDB + Mailpit)`: `docker compose up -d mongo mailpit` (Docker Desktop muss laufen)
 2. `auth-service`, `member-service`, `catalog-service`, `loan-service`, `notification-service`, `api-gateway`
 3. `frontend (Vite)`: http://localhost:5173
 
-Servisleri tek tek yönetmek için **Services** penceresini (Alt+8) kullanın. MongoDB ve Mailpit container'ları Stop ile durmaz; `docker compose stop` ile durdurun.
+Einzelne Services im Fenster **Services** (Alt+8) steuern. Die MongoDB- und Mailpit-Container stoppen nicht mit Stop, sondern mit `docker compose stop`.
 
-### Yerel geliştirme
+### Manuell
 
-Gerekenler: JDK 21+, Maven, Node 20+, MongoDB (27017) ve bir SMTP sunucusu (ör. `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`).
+Voraussetzungen: JDK 21+, Maven, Node 20+, MongoDB (27017) und ein SMTP-Server (z. B. `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`).
 
 ```bash
 mvn package -DskipTests
@@ -103,24 +107,44 @@ java -jar api-gateway/target/app.jar
 cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
-İlk açılışta örnek veriler (3 üye, 4 yazar, 3 yayınevi, 8 kitap) yüklenir.
+Beim ersten Start werden Beispieldaten geladen (3 Mitglieder, 4 Autoren, 3 Verlage, 8 Bücher).
 
-## Önemli API uç noktaları (gateway üzerinden)
+## Tests und CI
 
-| Metot | Yol | Açıklama |
+`e2e/smoke_test.py` prüft den laufenden Stack von außen durch das Frontend (nginx → Gateway → Services) mit 39 Prüfungen:
+
+- Sicherheit: ohne Token 401, falsches Passwort 401, interne Endpunkte 403, gefälschter `X-User-Role`-Header wirkungslos, nur Admins legen Personal an
+- Katalog: Autorenseite mit allen Büchern, Suche nach Autorenname
+- Ausleihe: Antrag → Freigabe → Bestand sinkt; doppelte Ausleihe wird abgelehnt (409); das Buch zeigt, wer es hat
+- Rückgabe: Rückgabe → Freigabe → Bestand steigt wieder
+- Leseprofil: Anzahl Bücher, Seiten und Kategorien
+- Benachrichtigung: Mahnung wird gesendet, in der Ausleihe vermerkt und kommt in Mailpit an
+
+```bash
+docker compose up -d --build
+BASE_URL=http://localhost:3000 python e2e/smoke_test.py
+```
+
+Der Test erwartet eine frische Datenbank mit den Beispieldaten.
+
+GitHub Actions (`.github/workflows/ci.yml`) baut bei jedem Push alle Services und das Frontend, startet anschließend den kompletten Stack mit Docker Compose und führt den End-to-End-Test aus.
+
+## Wichtige API-Endpunkte (über das Gateway)
+
+| Methode | Pfad | Beschreibung |
 |---|---|---|
-| POST | `/api/auth/login` | Giriş, JWT döner |
-| GET/POST/PUT | `/api/members`, `/api/members/{id}` | Üyeler (`?q=` arama) |
-| GET/POST/PUT/DELETE | `/api/books`, `/api/books/{id}` | Kitaplar (`?q=&category=&authorId=&availableOnly=`) |
-| GET | `/api/books/categories` | Kategoriler |
-| GET | `/api/authors/{id}` | Yazar + kitapları |
-| POST | `/api/loans` | Ödünç talebi `{memberId, bookId, days}` |
-| POST | `/api/loans/{id}/approve` · `/reject` | Vermeyi onayla / reddet |
-| POST | `/api/loans/{id}/return-request` · `/return-approve` · `/return-cancel` | İade akışı |
-| POST | `/api/loans/{id}/extend?days=7` | Süre uzat |
-| GET | `/api/loans/pending` · `/active?memberId=` · `/overdue` · `/due-soon` | Listeler |
-| GET | `/api/loans/books/{bookId}/active` | Kitap kimde |
-| GET | `/api/loans/members/{memberId}/stats` | Kitap sayısı, sayfa, kategori ve yazar dağılımı |
-| POST | `/api/notifications/loans/{loanId}/reminder` | Elle iade hatırlatması |
-| POST | `/api/notifications/run` | Günlük bildirim işini hemen çalıştır |
-| GET | `/api/notifications?loanId=&memberId=` | Bildirim günlüğü |
+| POST | `/api/auth/login` | Login, liefert das JWT |
+| GET/POST/PUT | `/api/members`, `/api/members/{id}` | Mitglieder (`?q=` Suche) |
+| GET/POST/PUT/DELETE | `/api/books`, `/api/books/{id}` | Bücher (`?q=&category=&authorId=&availableOnly=`) |
+| GET | `/api/books/categories` | Kategorien |
+| GET | `/api/authors/{id}` | Autor + seine Bücher |
+| POST | `/api/loans` | Ausleihantrag `{memberId, bookId, days}` |
+| POST | `/api/loans/{id}/approve` · `/reject` | Ausleihe freigeben / ablehnen |
+| POST | `/api/loans/{id}/return-request` · `/return-approve` · `/return-cancel` | Rückgabe |
+| POST | `/api/loans/{id}/extend?days=7` | Verlängern |
+| GET | `/api/loans/pending` · `/active?memberId=` · `/overdue` · `/due-soon` | Listen |
+| GET | `/api/loans/books/{bookId}/active` | Wer hat das Buch? |
+| GET | `/api/loans/members/{memberId}/stats` | Anzahl Bücher, Seiten, Kategorien und Autoren |
+| POST | `/api/notifications/loans/{loanId}/reminder` | Manuelle Mahnung |
+| POST | `/api/notifications/run` | Täglichen Benachrichtigungs-Job sofort ausführen |
+| GET | `/api/notifications?loanId=&memberId=` | Benachrichtigungsprotokoll |
