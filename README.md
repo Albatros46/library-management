@@ -61,6 +61,23 @@ docker compose up --build
 
 Gerçek SMTP için `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true`, `MAIL_STARTTLS=true`, `MAIL_FROM` ortam değişkenlerini verin. Üretimde mutlaka `JWT_SECRET` (en az 32 bayt) ayarlayın.
 
+### Terminalden tek komutla (IntelliJ terminali / PowerShell)
+
+```powershell
+.\start-all.ps1
+```
+
+MongoDB ve Mailpit'i Docker ile başlatır, Maven ile derler, 6 servisi ve Vite arayüzünü arka planda açar, hepsi hazır olunca adresleri yazar. Loglar `logs\` klasörüne gider.
+
+| Komut | Ne yapar |
+|---|---|
+| `.\start-all.ps1 -SkipBuild` | Derlemeden, mevcut jar'larla başlatır (daha hızlı) |
+| `.\start-all.ps1 -NoFrontend` | Sadece backend |
+| `.\stop-all.ps1` | Hepsini durdurur (MongoDB ve Mailpit dahil) |
+| `.\stop-all.ps1 -KeepInfra` | Servisleri durdurur, MongoDB ve Mailpit açık kalır |
+
+Portlardan biri doluysa (ör. `docker compose up` ile tüm yığın çalışıyorsa) betik hiçbir şey başlatmadan uyarır; önce `docker compose down` çalıştırın.
+
 ### IntelliJ IDEA'dan tek tıkla
 
 Projeyi IntelliJ'de açınca `.run/` klasöründeki çalıştırma ayarları otomatik gelir. Üst çubuktaki listeden **All Services** seçip ▶ (Run) ya da 🐞 (Debug) tıklayın. Şu sırayla hepsi başlar:
