@@ -1,0 +1,33 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/auth/**
+            - id: member-service
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/members/**
+            - id: catalog-service
+              uri: ${CATALOG_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/books/**,/api/authors/**,/api/publishers/**
+            - id: loan-service
+              uri: ${LOAN_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/loans/**
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/notifications/**
+library:
+  jwt:
+    secret: ${JWT_SECRET:change-me-this-is-a-dev-only-secret-of-at-least-32-bytes}

@@ -1,0 +1,21 @@
+server:
+  port: 8084
+  error:
+    include-message: always
+spring:
+  application:
+    name: loan-service
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/library_management}
+      auto-index-creation: true
+library:
+  time-zone: Europe/Istanbul
+  services:
+    member: ${MEMBER_SERVICE_URL:http://localhost:8082}
+    catalog: ${CATALOG_SERVICE_URL:http://localhost:8083}
+  loan:
+    default-days: 14
+    max-active: 5
+    max-extensions: 1
+    overdue-check-ms: 900000

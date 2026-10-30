@@ -1,0 +1,37 @@
+server:
+  port: 8085
+  error:
+    include-message: always
+spring:
+  application:
+    name: notification-service
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/library_management}
+      auto-index-creation: true
+  mail:
+    # Local default is Mailpit (docker compose), web UI at http://localhost:8025
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:false}
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+    default-encoding: UTF-8
+library:
+  time-zone: Europe/Istanbul
+  services:
+    loan: ${LOAN_SERVICE_URL:http://localhost:8084}
+    member: ${MEMBER_SERVICE_URL:http://localhost:8082}
+  mail:
+    from: ${MAIL_FROM:kutuphane@library.local}
+    library-name: ${LIBRARY_NAME:Şehir Kütüphanesi}
+  notify:
+    # Every day at 09:00
+    cron: ${NOTIFY_CRON:0 0 9 * * *}
+    due-soon-days: 2
+    # Overdue reminders are repeated at most this often per loan
+    overdue-repeat: P3D

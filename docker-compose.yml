@@ -1,0 +1,86 @@
+x-service: &service
+  build:
+    context: .
+  restart: unless-stopped
+  depends_on: [mongo]
+
+x-env: &env
+  JWT_SECRET: ${JWT_SECRET:-change-me-this-is-a-dev-only-secret-of-at-least-32-bytes}
+  MEMBER_SERVICE_URL: http://member-service:8082
+  CATALOG_SERVICE_URL: http://catalog-service:8083
+  LOAN_SERVICE_URL: http://loan-service:8084
+  # All services share one database; their collections do not overlap. Set MONGO_URI to use another
+  # server, e.g. mongodb://host.docker.internal:27017/library_management for a MongoDB running on the host.
+  MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/library_management}
+
+services:
+  # Reachable from the host as mongodb://localhost:27017/library_management
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    volumes: [mongo-data:/data/db]
+
+  # Catches every outgoing e-mail in development. Web UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["8025:8025", "1025:1025"]
+
+  auth-service:
+    <<: *service
+    build: { context: ., args: { MODULE: auth-service } }
+    environment:
+      <<: *env
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@library.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+
+  member-service:
+    <<: *service
+    build: { context: ., args: { MODULE: member-service } }
+    environment:
+      <<: *env
+
+  catalog-service:
+    <<: *service
+    build: { context: ., args: { MODULE: catalog-service } }
+    environment:
+      <<: *env
+
+  loan-service:
+    <<: *service
+    build: { context: ., args: { MODULE: loan-service } }
+    environment:
+      <<: *env
+
+  notification-service:
+    <<: *service
+    build: { context: ., args: { MODULE: notification-service } }
+    depends_on: [mongo, mailpit]
+    environment:
+      <<: *env
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-false}
+      MAIL_FROM: ${MAIL_FROM:-kutuphane@library.local}
+
+  api-gateway:
+    <<: *service
+    build: { context: ., args: { MODULE: api-gateway } }
+    depends_on: [auth-service, member-service, catalog-service, loan-service, notification-service]
+    ports: ["8080:8080"]
+    environment:
+      <<: *env
+      AUTH_SERVICE_URL: http://auth-service:8081
+      NOTIFICATION_SERVICE_URL: http://notification-service:8085
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on: [api-gateway]
+    ports: ["3000:80"]
+
+volumes:
+  mongo-data:
