@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="All Services" type="CompoundRunConfigurationType">
+    <toRun name="infra (MongoDB + Mailpit)" type="ShConfigurationType" />
+    <toRun name="auth-service" type="SpringBootApplicationConfigurationType" />
+    <toRun name="member-service" type="SpringBootApplicationConfigurationType" />
+    <toRun name="catalog-service" type="SpringBootApplicationConfigurationType" />
+    <toRun name="loan-service" type="SpringBootApplicationConfigurationType" />
+    <toRun name="notification-service" type="SpringBootApplicationConfigurationType" />
+    <toRun name="api-gateway" type="SpringBootApplicationConfigurationType" />
+    <toRun name="frontend (Vite)" type="js.build_tools.npm" />
+    <method v="2" />
+  </configuration>
+</component>

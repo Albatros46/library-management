@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="loan-service" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" folderName="Library">
+    <module name="loan-service" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.library.loan.LoanServiceApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

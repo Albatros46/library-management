@@ -61,6 +61,16 @@ docker compose up --build
 
 Gerçek SMTP için `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true`, `MAIL_STARTTLS=true`, `MAIL_FROM` ortam değişkenlerini verin. Üretimde mutlaka `JWT_SECRET` (en az 32 bayt) ayarlayın.
 
+### IntelliJ IDEA'dan tek tıkla
+
+Projeyi IntelliJ'de açınca `.run/` klasöründeki çalıştırma ayarları otomatik gelir. Üst çubuktaki listeden **All Services** seçip ▶ (Run) ya da 🐞 (Debug) tıklayın. Şu sırayla hepsi başlar:
+
+1. `infra (MongoDB + Mailpit)`: `docker compose up -d mongo mailpit` (Docker Desktop açık olmalı)
+2. `auth-service`, `member-service`, `catalog-service`, `loan-service`, `notification-service`, `api-gateway`
+3. `frontend (Vite)`: http://localhost:5173
+
+Servisleri tek tek yönetmek için **Services** penceresini (Alt+8) kullanın. MongoDB ve Mailpit container'ları Stop ile durmaz; `docker compose stop` ile durdurun.
+
 ### Yerel geliştirme
 
 Gerekenler: JDK 21+, Maven, Node 20+, MongoDB (27017) ve bir SMTP sunucusu (ör. `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`).

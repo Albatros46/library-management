@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="catalog-service" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" folderName="Library">
+    <module name="catalog-service" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.library.catalog.CatalogServiceApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
